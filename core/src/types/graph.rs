@@ -2,7 +2,7 @@ use {
     super::lsp::{Position, Range, SymbolKind},
     serde::Serialize,
     serde_repr::Serialize_repr,
-    std::hash::{Hash, Hasher},
+    std::{hash::{Hash, Hasher}}
 };
 
 #[derive(Debug, Serialize)]
@@ -24,6 +24,16 @@ pub struct Symbol {
     pub kind: SymbolKind,
     pub range: Range,
     pub children: Vec<Symbol>,
+    pub tier: Option<Tier>, // None means standard (defualt)
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub enum Tier {
+    Validated,
+    Critical,
+    Priority,
+    Standard,
+    Experimental,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,3 +83,5 @@ impl GlobalPosition {
         }
     }
 }
+
+

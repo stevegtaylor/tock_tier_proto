@@ -1,6 +1,6 @@
-mod go;
-mod jsts;
-mod rust;
+pub(crate) mod go;
+pub(crate) mod jsts;
+pub(crate) mod rust;
 
 use {
     self::{go::Go, jsts::Jsts, rust::Rust},

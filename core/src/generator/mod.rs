@@ -9,6 +9,7 @@ mod tests;
 use {
     crate::{
         lang,
+        lang::rust::{parse_tier},
         types::{
             graph::{File, GlobalPosition, Graph, Relation, RelationKind, Symbol},
             lsp::{
@@ -207,55 +208,66 @@ impl GraphGenerator {
     }
 
     fn collect_files_and_symbols(&self) -> (Vec<File>, HashSet<GlobalPosition>) {
-        let mut all_symbols = HashSet::new();
-        let files = self
-            .files
-            .iter()
-            .map(|(p, symbols)| {
-                let symbols = symbols
-                    .iter()
-                    .filter_map(|s| {
-                        self.convert_symbol(self.file_id_map[p], s, None, &mut all_symbols)
-                    })
-                    .collect();
+    let mut all_symbols = HashSet::new();
+    let files = self
+        .files
+        .iter()
+        .map(|(p, symbols)| {
+            // Read source text for tier annotation parsing
+            let source = std::fs::read_to_string(p).unwrap_or_else(|e| {
+    eprintln!("Failed to read file {}: {}", p, e);
+    String::new()
+});
+            let source_lines: Vec<&str> = source.lines().collect();
 
-                File {
-                    id: self.file_id_map[p],
-                    path: p.clone(),
-                    symbols,
-                }
-            })
-            .collect::<Vec<_>>();
+            let symbols = symbols
+                .iter()
+                .filter_map(|s| {
+                    self.convert_symbol(self.file_id_map[p], s, None, &mut all_symbols, &source_lines)
+                })
+                .collect();
 
-        (files, all_symbols)
-    }
+            File {
+                id: self.file_id_map[p],
+                path: p.clone(),
+                symbols,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    (files, all_symbols)
+}
 
     fn convert_symbol(
-        &self,
-        file_id: u32,
-        symbol: &DocumentSymbol,
-        parent: Option<&DocumentSymbol>,
-        all_symbols: &mut HashSet<GlobalPosition>,
-    ) -> Option<Symbol> {
-        if self.filter && !self.lang.filter_symbol(symbol, parent) {
-            return Option::None;
-        }
-
-        all_symbols.insert(GlobalPosition::new(file_id, symbol.selection_range.start));
-
-        let children = symbol
-            .children
-            .iter()
-            .filter_map(|child| self.convert_symbol(file_id, child, Some(symbol), all_symbols))
-            .collect();
-
-        Some(Symbol {
-            range: symbol.selection_range,
-            kind: symbol.kind,
-            name: symbol.name.clone(),
-            children,
-        })
+    &self,
+    file_id: u32,
+    symbol: &DocumentSymbol,
+    parent: Option<&DocumentSymbol>,
+    all_symbols: &mut HashSet<GlobalPosition>,
+    source_lines: &[&str],
+) -> Option<Symbol> {
+    if self.filter && !self.lang.filter_symbol(symbol, parent) {
+        return Option::None;
     }
+
+    all_symbols.insert(GlobalPosition::new(file_id, symbol.selection_range.start));
+
+    let children = symbol
+        .children
+        .iter()
+        .filter_map(|child| self.convert_symbol(file_id, child, Some(symbol), all_symbols, source_lines))
+        .collect();
+
+    let tier = parse_tier(source_lines, symbol.selection_range.start.line);
+
+    Some(Symbol {
+        range: symbol.selection_range,
+        kind: symbol.kind,
+        name: symbol.name.clone(),
+        children,
+        tier,
+    })
+}
 
     fn try_insert_symbol(&self, item: &CallHierarchyItem, node: &mut File) -> bool {
         let mut cells = &mut node.symbols;
@@ -303,6 +315,7 @@ impl GraphGenerator {
                         kind: item.kind,
                         range: item.selection_range,
                         children,
+                        tier: None,
                     },
                 );
             }
